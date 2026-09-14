@@ -1,5 +1,5 @@
 homepage: "https://trustdata.tech"
 documentation: "https://docs.trustdata.tech/"
 versions:
-  - sha: 327c9fa5008233f4215cff015662b1eadff8ff46
+  - sha: 273133aa01fd25fb9ac6dfea70766488ff0f216b
     changeNotes: Initial release.
