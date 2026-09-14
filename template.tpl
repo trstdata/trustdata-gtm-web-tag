@@ -202,7 +202,7 @@ ___TEMPLATE_PARAMETERS___
             "errorMessage": "Enter the step's position in the funnel: 1 for the first step, 2 for the second."
           }
         ],
-        "help": "The step's position in the funnel. Use <b>funnel_step</b> only for a step with no standard event name, such as passenger details, and send the final step as <b>purchase</b> or <b>generate_lead</b>. If every step is a funnel_step, number them 1, 2, 3. If the funnel also uses standard events, number around their positions: view_item 10, add_to_cart 20, begin_checkout 30, add_payment_info 40, purchase 90. A step between checkout and payment is 31, the next one 32.",
+        "help": "Position of this step in the funnel: 1, 2, 3.",
         "enablingConditions": [
           {
             "paramName": "eventName",
@@ -221,7 +221,7 @@ ___TEMPLATE_PARAMETERS___
             "type": "NON_EMPTY"
           }
         ],
-        "help": "A stable ID for the step, such as <code>passenger_details</code>. Keep it the same when the page title changes: funnels match on it. Add <code>value</code> and <code>currency</code> in the event parameters to record the basket at this step.",
+        "help": "ID of the step, such as <code>passenger_details</code>. Funnels match on it, so keep it stable.",
         "enablingConditions": [
           {
             "paramName": "eventName",

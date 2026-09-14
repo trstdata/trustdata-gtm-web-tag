@@ -46,25 +46,10 @@ the same key, the table value is sent.
 
 ## Track funnel steps
 
-Use a standard event name for a standard moment: `view_item`, `add_to_cart`,
-`begin_checkout`, `add_payment_info`, `purchase`, `generate_lead`. TrustData places
-these in a funnel with no setup, counts them in sessions, and forwards the ones ad
-platforms support.
-
-Use `funnel_step` for a step that has no standard name, such as passenger details or
-cabin selection. Choose **funnel_step** as the event name and fill in two fields:
-
-- **Step index**: the step's position in the funnel.
-- **Step name**: a stable ID such as `passenger_details`. Keep it the same when the
-  page changes, because funnels match on it.
-
-If every step is a `funnel_step`, number them 1, 2, 3. If the funnel also uses
-standard events, number around their positions: `view_item` 10, `add_to_cart` 20,
-`begin_checkout` 30, `add_payment_info` 40, `purchase` 90. A step between checkout and
-payment is 31, and the next one is 32.
-
-A `funnel_step` tag without a step index or a step name fails and sends nothing. Add
-`value` and `currency` in the event parameters to record the basket at that step.
+For a step with no standard event name, such as passenger details, choose
+**funnel_step** and fill in **Step index** (1, 2, 3) and **Step name** (a stable ID such
+as `passenger_details`). Keep standard names like `add_to_cart` and `begin_checkout` for
+standard moments.
 
 ## Consent
 
