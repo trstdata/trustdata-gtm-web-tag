@@ -1,5 +1,5 @@
 homepage: "https://trustdata.tech"
-documentation: "https://docs.trustdata.tech/"
+documentation: "https://docs.trustdata.tech/tracking-sdk/google-tag-manager"
 versions:
-  - sha: 273133aa01fd25fb9ac6dfea70766488ff0f216b
+  - sha: a7b222745f52c9ef878312671f97c4be459191ae
     changeNotes: Initial release.
