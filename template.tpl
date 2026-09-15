@@ -28,7 +28,7 @@ ___INFO___
   "containerContexts": [
     "WEB"
   ],
-  "documentation": "https://docs.trustdata.tech/"
+  "documentation": "https://docs.trustdata.tech/tracking-sdk/google-tag-manager"
 }
 
 

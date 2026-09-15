@@ -4,7 +4,7 @@ Send page views, events and consent decisions from a Google Tag Manager web
 container to TrustData. The tag loads the TrustData SDK, reads Google Consent Mode,
 and captures IAB TCF consent choices without extra setup.
 
-Documentation: https://docs.trustdata.tech/
+Documentation: https://docs.trustdata.tech/tracking-sdk/google-tag-manager
 
 ## Install the template
 
