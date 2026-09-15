@@ -439,12 +439,12 @@ ___TEMPLATE_PARAMETERS___
           {
             "type": "REGEX",
             "args": [
-              "^(https://[^/\\s]+|\\{\\{.+\\}\\})?$"
+              "^(https://.+|\\{\\{.+\\}\\})?$"
             ],
-            "errorMessage": "Enter an https:// origin with no path, e.g. https://t.example.com."
+            "errorMessage": "Enter an https:// URL, such as https://example.com/_td, or a variable."
           }
         ],
-        "help": "Change this only if you serve the TrustData collector from your own domain."
+        "help": "The collector origin. Keep the default unless you serve the TrustData collector through a reverse proxy on your own domain. For a reverse proxy, enter the proxied path, for example <code>https://{{Page Hostname}}/_td</code>. The SDK script loads from this origin too."
       },
       {
         "type": "TEXT",
@@ -482,10 +482,18 @@ const makeInteger = require('makeInteger');
 const Object = require('Object');
 
 const LOG_PREFIX = 'TRDT - ';
-const SCRIPT_URL = 'https://t.trustdata.tech/t.js';
 const CACHE_TOKEN = 'trustdata-sdk';
 const DEFAULT_API_HOST = 'https://t.trustdata.tech';
 const DEFAULT_API_PATH = '/api/events';
+
+// The SDK loads from the origin its events post to. Behind a reverse proxy on
+// the customer's own domain that origin is the proxy, and a t.js fetched from
+// t.trustdata.tech instead would be a third-party request on a first-party
+// setup (#671).
+const API_HOST = data.apiHost || DEFAULT_API_HOST;
+const SCRIPT_URL = (API_HOST.charAt(API_HOST.length - 1) === '/'
+  ? API_HOST.substring(0, API_HOST.length - 1)
+  : API_HOST) + '/t.js';
 
 let previousAnalyticsConsent = false;
 let previousAdConsent = false;
@@ -591,7 +599,7 @@ const processInit = function(consent) {
   }
   log(LOG_PREFIX + 'Initializing with targetId: ' + targetId);
   const initOptions = {
-    apiHost: data.apiHost || DEFAULT_API_HOST,
+    apiHost: API_HOST,
     apiPath: DEFAULT_API_PATH,
     consent: consent,
     sendPageView: false
