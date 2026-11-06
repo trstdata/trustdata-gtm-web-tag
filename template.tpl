@@ -229,17 +229,32 @@ ___TEMPLATE_PARAMETERS___
             "type": "EQUALS"
           }
         ]
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
+    "name": "eventParametersGroup",
+    "displayName": "Event parameters",
+    "groupStyle": "ZIPPY_OPEN",
+    "subParams": [
+      {
+        "type": "TEXT",
+        "name": "eventParametersObject",
+        "displayName": "Event settings variable",
+        "simpleValueType": true,
+        "help": "Optional. A variable that returns an object, such as a Google Event Settings variable. A row below overrides the same key."
       },
       {
         "type": "PARAM_TABLE",
         "name": "eventParameters",
-        "displayName": "Event parameters",
+        "newRowButtonText": "Add parameter",
         "paramTableColumns": [
           {
             "param": {
               "type": "TEXT",
               "name": "name",
-              "displayName": "Name",
+              "displayName": "Event parameter",
               "simpleValueType": true
             },
             "isUnique": true
@@ -254,13 +269,65 @@ ___TEMPLATE_PARAMETERS___
             "isUnique": false
           }
         ]
+      }
+    ],
+    "enablingConditions": [
+      {
+        "paramName": "commandType",
+        "paramValue": "both",
+        "type": "EQUALS"
       },
       {
+        "paramName": "commandType",
+        "paramValue": "event",
+        "type": "EQUALS"
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
+    "name": "defaultParametersGroup",
+    "displayName": "Default parameters",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
         "type": "TEXT",
-        "name": "eventParametersObject",
-        "displayName": "Event parameters from a variable",
+        "name": "defaultEventParametersObject",
+        "displayName": "Settings variable",
         "simpleValueType": true,
-        "help": "Optional. A variable that returns an object, e.g. a Data Layer Variable for <code>ecommerce</code>. Its keys are sent as event parameters. A row in the table above overrides the same key. Keys starting with <code>_</code> are dropped."
+        "help": "Optional. Added to every event, including the ones the SDK sends itself. Set it on the Initialize tag."
+      },
+      {
+        "type": "PARAM_TABLE",
+        "name": "defaultEventParameters",
+        "newRowButtonText": "Add parameter",
+        "paramTableColumns": [
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "name",
+              "displayName": "Parameter",
+              "simpleValueType": true
+            },
+            "isUnique": true
+          },
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "value",
+              "displayName": "Value",
+              "simpleValueType": true
+            },
+            "isUnique": false
+          }
+        ]
+      }
+    ],
+    "enablingConditions": [
+      {
+        "paramName": "commandType",
+        "paramValue": "consent",
+        "type": "NOT_EQUALS"
       }
     ]
   },
@@ -429,38 +496,6 @@ ___TEMPLATE_PARAMETERS___
       }
     ],
     "subParams": [
-      {
-        "type": "PARAM_TABLE",
-        "name": "defaultEventParameters",
-        "displayName": "Default event parameters (all events)",
-        "paramTableColumns": [
-          {
-            "param": {
-              "type": "TEXT",
-              "name": "name",
-              "displayName": "Name",
-              "simpleValueType": true
-            },
-            "isUnique": true
-          },
-          {
-            "param": {
-              "type": "TEXT",
-              "name": "value",
-              "displayName": "Value",
-              "simpleValueType": true
-            },
-            "isUnique": false
-          }
-        ]
-      },
-      {
-        "type": "TEXT",
-        "name": "defaultEventParametersObject",
-        "displayName": "Default event parameters from a variable",
-        "simpleValueType": true,
-        "help": "Optional. Set these on the <b>Initialize</b> tag. A variable that returns an object; its keys are added to every event, including the ones the SDK sends itself (<code>user_engagement</code>, <code>page_leave</code>). A parameter on an event tag overrides the same key, and a row in the table above overrides the same key here. Identity fields (<code>visitor_id</code>, <code>user_id</code>, <code>consent</code>, <code>event_name</code>, <code>attribution_id</code>) cannot be overridden, and <code>user_data</code> is ignored here (send it on an event tag). Read once, at the first Initialize on the page. Sent without consent, so never put personal data here."
-      },
       {
         "type": "TEXT",
         "name": "apiHost",
