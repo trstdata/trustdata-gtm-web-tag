@@ -246,29 +246,24 @@ ___TEMPLATE_PARAMETERS___
         "help": "Optional. A variable that returns an object, such as a Google Event Settings variable. A row below overrides the same key."
       },
       {
-        "type": "PARAM_TABLE",
+        "type": "SIMPLE_TABLE",
         "name": "eventParameters",
-        "newRowButtonText": "Add parameter",
-        "paramTableColumns": [
+        "simpleTableColumns": [
           {
-            "param": {
-              "type": "TEXT",
-              "name": "name",
-              "displayName": "Event parameter",
-              "simpleValueType": true
-            },
+            "defaultValue": "",
+            "displayName": "Event parameter",
+            "name": "name",
+            "type": "TEXT",
             "isUnique": true
           },
           {
-            "param": {
-              "type": "TEXT",
-              "name": "value",
-              "displayName": "Value",
-              "simpleValueType": true
-            },
-            "isUnique": false
+            "defaultValue": "",
+            "displayName": "Value",
+            "name": "value",
+            "type": "TEXT"
           }
-        ]
+        ],
+        "newRowButtonText": "Add parameter"
       }
     ],
     "enablingConditions": [
@@ -298,29 +293,24 @@ ___TEMPLATE_PARAMETERS___
         "help": "Optional. Added to every event, including the ones the SDK sends itself. Set it on the Initialize tag."
       },
       {
-        "type": "PARAM_TABLE",
+        "type": "SIMPLE_TABLE",
         "name": "defaultEventParameters",
-        "newRowButtonText": "Add parameter",
-        "paramTableColumns": [
+        "simpleTableColumns": [
           {
-            "param": {
-              "type": "TEXT",
-              "name": "name",
-              "displayName": "Parameter",
-              "simpleValueType": true
-            },
+            "defaultValue": "",
+            "displayName": "Parameter",
+            "name": "name",
+            "type": "TEXT",
             "isUnique": true
           },
           {
-            "param": {
-              "type": "TEXT",
-              "name": "value",
-              "displayName": "Value",
-              "simpleValueType": true
-            },
-            "isUnique": false
+            "defaultValue": "",
+            "displayName": "Value",
+            "name": "value",
+            "type": "TEXT"
           }
-        ]
+        ],
+        "newRowButtonText": "Add parameter"
       }
     ],
     "enablingConditions": [
