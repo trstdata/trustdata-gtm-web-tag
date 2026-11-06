@@ -260,7 +260,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "eventParametersObject",
         "displayName": "Event parameters from a variable",
         "simpleValueType": true,
-        "help": "Optional. A variable that returns an object, e.g. a Data Layer Variable for <code>ecommerce</code>. Its keys are sent as event parameters. A row in the table above overrides the same key."
+        "help": "Optional. A variable that returns an object, e.g. a Data Layer Variable for <code>ecommerce</code>. Its keys are sent as event parameters. A row in the table above overrides the same key. Keys starting with <code>_</code> are dropped."
       }
     ]
   },
@@ -429,6 +429,38 @@ ___TEMPLATE_PARAMETERS___
       }
     ],
     "subParams": [
+      {
+        "type": "PARAM_TABLE",
+        "name": "defaultEventParameters",
+        "displayName": "Default event parameters (all events)",
+        "paramTableColumns": [
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "name",
+              "displayName": "Name",
+              "simpleValueType": true
+            },
+            "isUnique": true
+          },
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "value",
+              "displayName": "Value",
+              "simpleValueType": true
+            },
+            "isUnique": false
+          }
+        ]
+      },
+      {
+        "type": "TEXT",
+        "name": "defaultEventParametersObject",
+        "displayName": "Default event parameters from a variable",
+        "simpleValueType": true,
+        "help": "Optional. Set these on the <b>Initialize</b> tag. A variable that returns an object; its keys are added to every event, including the ones the SDK sends itself (<code>user_engagement</code>, <code>page_leave</code>). A parameter on an event tag overrides the same key, and a row in the table above overrides the same key here. Identity fields (<code>visitor_id</code>, <code>user_id</code>, <code>consent</code>, <code>event_name</code>, <code>attribution_id</code>) cannot be overridden, and <code>user_data</code> is ignored here (send it on an event tag). Read once, at the first Initialize on the page. Sent without consent, so never put personal data here."
+      },
       {
         "type": "TEXT",
         "name": "apiHost",
@@ -607,6 +639,15 @@ const processInit = function(consent) {
   if (data.ignoreDomains) {
     initOptions.ignoreDomains = data.ignoreDomains;
   }
+  // Sent with every event, the SDK's own (user_engagement, page_leave) too. An
+  // event tag's own parameters override these; the SDK keeps its own fields.
+  // user_data is left out on purpose: only the event path hashes it and keeps it
+  // out of the logs, and the SDK refuses a default user_data anyway.
+  const defaultProps = collectProps(data.defaultEventParametersObject, data.defaultEventParameters);
+  Object.delete(defaultProps, 'user_data');
+  if (Object.keys(defaultProps).length > 0) {
+    initOptions.defaultProps = defaultProps;
+  }
   log(LOG_PREFIX + 'Init options: ' + JSON.stringify(initOptions));
   execCommand(['init', targetId, initOptions]);
   if (data.debug === true) {
@@ -777,19 +818,43 @@ const funnelStepError = function() {
   return null;
 };
 
-const buildEventProps = function() {
-  const eventProps = {};
-  if (getType(data.eventParametersObject) === 'object') {
-    Object.keys(data.eventParametersObject).forEach(function(key) {
-      eventProps[key] = data.eventParametersObject[key];
+// Google's own variables (Event Settings, Configuration Settings) carry internal
+// keys such as _tag_mode and _tag_metadata, top level or inside user_data. They
+// mean nothing to TrustData, so an object variable's _-prefixed keys are dropped.
+const isInternalKey = function(key) {
+  return key.indexOf('_') === 0;
+};
+
+const withoutInternalKeys = function(obj) {
+  const clean = {};
+  Object.keys(obj).forEach(function(key) {
+    if (!isInternalKey(key)) clean[key] = obj[key];
+  });
+  return clean;
+};
+
+// An object variable first, then a name/value table that overrides its keys.
+const collectProps = function(objectVar, table) {
+  const props = {};
+  if (getType(objectVar) === 'object') {
+    const clean = withoutInternalKeys(objectVar);
+    Object.keys(clean).forEach(function(key) {
+      props[key] = getType(clean[key]) === 'object' && key === 'user_data'
+        ? withoutInternalKeys(clean[key])
+        : clean[key];
     });
   }
-  if (data.eventParameters && data.eventParameters.length > 0) {
-    const tableProps = makeTableMap(data.eventParameters, 'name', 'value');
+  if (table && table.length > 0) {
+    const tableProps = makeTableMap(table, 'name', 'value');
     Object.keys(tableProps).forEach(function(key) {
-      eventProps[key] = tableProps[key];
+      props[key] = tableProps[key];
     });
   }
+  return props;
+};
+
+const buildEventProps = function() {
+  const eventProps = collectProps(data.eventParametersObject, data.eventParameters);
   if (resolveEventName() === 'funnel_step') {
     eventProps.step_index = makeInteger(data.stepIndex);
     eventProps.step_name = data.stepName;
@@ -1660,6 +1725,56 @@ scenarios:
     }));
 
     assertThat(pushed[1][2]).isEqualTo({ currency: 'EUR' });
+- name: '[Default parameters] Variable and table defaults reach init, the table wins, and the event keeps its own'
+  code: |-
+    runCode(merge(mockData, {
+      eventName: 'purchase',
+      defaultEventParametersObject: { site_type: 'com', tier: 'default' },
+      defaultEventParameters: [{ name: 'tier', value: 'table' }],
+      eventParameters: [{ name: 'tier', value: 'event' }]
+    }));
+
+    assertThat(pushed[0][2].defaultProps).isEqualTo({ site_type: 'com', tier: 'table' });
+    assertThat(pushed[1][2]).isEqualTo({ tier: 'event' });
+- name: '[Default parameters] A tag with no defaults sends no defaultProps, and a non-object variable is ignored'
+  code: |-
+    runCode(mockData);
+    assertThat(pushed[0][2].defaultProps).isUndefined();
+
+    pushed.length = 0;
+    runCode(merge(mockData, { defaultEventParametersObject: 'tier=gold' }));
+    assertThat(pushed[0][2].defaultProps).isUndefined();
+- name: '[Event parameters] Google-internal keys in a variable are dropped, top level and inside user_data'
+  code: |-
+    runCode(merge(mockData, {
+      eventName: 'purchase',
+      eventParametersObject: {
+        tier: 'gold',
+        _tag_mode: 'MANUAL',
+        user_data: { _tag_mode: 'MANUAL', _tag_metadata: {}, city: 'Paris' }
+      },
+      defaultEventParametersObject: { site_type: 'com', _internal: 1 }
+    }));
+
+    assertThat(pushed[0][2].defaultProps).isEqualTo({ site_type: 'com' });
+    assertThat(pushed[1][2]).isEqualTo({ tier: 'gold', user_data: { city: 'Paris' } });
+- name: '[Event parameters] A table row named with a leading underscore is kept, the author typed it'
+  code: |-
+    runCode(merge(mockData, {
+      eventName: 'purchase',
+      eventParameters: [{ name: '_note', value: 'x' }]
+    }));
+
+    assertThat(pushed[1][2]).isEqualTo({ _note: 'x' });
+- name: '[Default parameters] user_data is never a default, so it is not sent and its values are not logged'
+  code: |-
+    runCode(merge(mockData, {
+      defaultEventParametersObject: { site_type: 'com', user_data: { email: 'jane@example.com' } },
+      defaultEventParameters: [{ name: 'user_data', value: 'jane@example.com' }]
+    }));
+
+    assertThat(pushed[0][2].defaultProps).isEqualTo({ site_type: 'com' });
+    assertThat(logged.join(' ').indexOf('jane@example.com')).isEqualTo(-1);
 - name: '[Event parameters] A custom event name is sent, and an empty one falls back to page_view'
   code: |-
     runCode(merge(mockData, { eventName: '__custom', eventNameCustom: 'newsletter_signup' }));
