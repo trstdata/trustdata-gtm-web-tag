@@ -290,7 +290,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "defaultEventParametersObject",
         "displayName": "Settings variable",
         "simpleValueType": true,
-        "help": "Optional. Added to every event, including the ones the SDK sends itself. Set it on the Initialize tag."
+        "help": "Optional. Added to every event, SDK-sent ones too, and sent without consent: no personal data. Set it on the Initialize tag."
       },
       {
         "type": "SIMPLE_TABLE",
@@ -457,19 +457,10 @@ ___TEMPLATE_PARAMETERS___
       },
       {
         "type": "TEXT",
-        "name": "phoneCountryCode",
-        "displayName": "Default phone country code",
+        "name": "userProvidedData",
+        "displayName": "User-provided data variable",
         "simpleValueType": true,
-        "valueValidators": [
-          {
-            "type": "REGEX",
-            "args": [
-              "^(\\+?[0-9]{1,4}|\\{\\{.+\\}\\})?$"
-            ],
-            "errorMessage": "Enter a country calling code, e.g. 33 or 44."
-          }
-        ],
-        "help": "Used to hash a <code>user_data.phone</code> written in national format (starting with 0), e.g. <code>33</code> for France. Without it, a national-format number is dropped instead of hashed. Numbers starting with + need no code."
+        "help": "Optional. A Google User-Provided Data variable. Email and phone are hashed, and sent only with advertising consent."
       }
     ]
   },
@@ -596,6 +587,8 @@ const execCommand = function(cmd) {
       callInWindow('trustdata.consent', cmd[1], cmd[2]);
     } else if (method === 'setUserId') {
       callInWindow('trustdata.setUserId', cmd[1]);
+    } else if (method === 'setUser') {
+      callInWindow('trustdata.setUser', cmd[1]);
     } else if (method === 'linkIdentity') {
       callInWindow('trustdata.linkIdentity');
     } else if (method === 'debug') {
@@ -810,11 +803,11 @@ const digitsOnly = function(value) {
 };
 
 /**
- * Normalize phone to E.164 for hashing. A number starting with + or with a
- * country code carries its own country; a national number (leading 0) needs the
- * tag's default country code. Returns null when the country is unknown: a hash
- * of the wrong number matches nobody, so the phone is dropped instead.
- * Examples (code 33): "0601020304" -> "+33601020304", "+33 6 01 02 03 04" -> "+33601020304"
+ * Normalize phone to E.164. A number in international format carries its own
+ * country. A number with a leading 0 is read as national: it cannot be placed in
+ * a country, and a hash of the wrong number matches nobody, so it returns null
+ * and the phone is dropped. Digits-only numbers are trusted to include a country code.
+ * Example: "+33 6 01 02 03 04" -> "+33601020304"
  */
 const normalizePhone = function(phone) {
   if (getType(phone) !== 'string') return null;
@@ -823,9 +816,7 @@ const normalizePhone = function(phone) {
   if (phone.trim().charAt(0) === '+' || digits.charAt(0) !== '0') {
     return '+' + digits;
   }
-  const countryCode = data.phoneCountryCode ? digitsOnly(data.phoneCountryCode) : '';
-  if (!countryCode) return null;
-  return '+' + countryCode + digits.substring(1);
+  return null;
 };
 
 // Event name is a dropdown of standard events; '__custom' reveals a free-text
@@ -858,15 +849,26 @@ const withoutInternalKeys = function(obj) {
   return clean;
 };
 
+// Google's User-Provided Data variable puts these at the top level. Sent as a
+// plain parameter they would go out unhashed and without consent, so the
+// parameter variables refuse them: that variable belongs in Identity.
+const PERSONAL_KEYS = ['email', 'phone_number', 'address', 'first_name', 'last_name',
+  'sha256_email_address', 'sha256_phone_number'];
+const isPersonalKey = function(key) {
+  return PERSONAL_KEYS.indexOf(key) !== -1;
+};
+
 // An object variable first, then a name/value table that overrides its keys.
 const collectProps = function(objectVar, table) {
   const props = {};
   if (getType(objectVar) === 'object') {
     const clean = withoutInternalKeys(objectVar);
     Object.keys(clean).forEach(function(key) {
-      props[key] = getType(clean[key]) === 'object' && key === 'user_data'
-        ? withoutInternalKeys(clean[key])
-        : clean[key];
+      if (isPersonalKey(key)) {
+        log(LOG_PREFIX + 'Dropped "' + key + '" from a parameter variable: use the User-provided data variable');
+        return;
+      }
+      props[key] = clean[key];
     });
   }
   if (table && table.length > 0) {
@@ -878,8 +880,24 @@ const collectProps = function(objectVar, table) {
   return props;
 };
 
+// A user_data object from a Google variable: drop its internal keys, at the top
+// and inside address, and rename Google's phone_number to phone so it is
+// normalized and hashed with the rest instead of going out as typed.
+const cleanUserData = function(userData) {
+  const clean = withoutInternalKeys(userData);
+  if (getType(clean.address) === 'object') clean.address = withoutInternalKeys(clean.address);
+  if (clean.phone_number !== undefined) {
+    if (clean.phone === undefined) clean.phone = clean.phone_number;
+    Object.delete(clean, 'phone_number');
+  }
+  return clean;
+};
+
 const buildEventProps = function() {
   const eventProps = collectProps(data.eventParametersObject, data.eventParameters);
+  if (getType(eventProps.user_data) === 'object') {
+    eventProps.user_data = cleanUserData(eventProps.user_data);
+  }
   if (resolveEventName() === 'funnel_step') {
     eventProps.step_index = makeInteger(data.stepIndex);
     eventProps.step_name = data.stepName;
@@ -887,7 +905,48 @@ const buildEventProps = function() {
   return eventProps;
 };
 
+const hasText = function(value) {
+  return getType(value) === 'string' && value.trim() !== '';
+};
+
+// A Google User-Provided Data variable -> trustdata.setUser. The SDK hashes it
+// and sends it only with advertising consent. Values are never logged, only
+// which fields were found.
+const applyUserProvidedData = function() {
+  if (getType(data.userProvidedData) !== 'object') return;
+  const source = withoutInternalKeys(data.userProvidedData);
+  const address = getType(source.address) === 'object' ? withoutInternalKeys(source.address) : {};
+  const user = {};
+
+  if (hasText(source.email)) user.email = normalizeEmail(source.email);
+  if (hasText(source.phone_number)) {
+    const phone = normalizePhone(source.phone_number);
+    if (phone) user.phone = phone;
+    else log(LOG_PREFIX + 'Phone dropped: national format, no country code');
+  }
+  const firstName = source.first_name || address.first_name;
+  const lastName = source.last_name || address.last_name;
+  if (hasText(firstName)) user.first_name = firstName;
+  if (hasText(lastName)) user.last_name = lastName;
+
+  const place = {};
+  ['street', 'city', 'region', 'postal_code', 'country'].forEach(function(key) {
+    if (hasText(address[key])) place[key] = address[key];
+  });
+  if (Object.keys(place).length > 0) user.address = place;
+
+  // setUser replaces what the SDK holds, so a name or address with no email or
+  // phone must not overwrite a complete record from another tag.
+  if (user.email === undefined && user.phone === undefined) {
+    log(LOG_PREFIX + 'User-provided data: no email or phone, not applied');
+    return;
+  }
+  log(LOG_PREFIX + 'User-provided data: ' + Object.keys(user).join(','));
+  execCommand(['setUser', user]);
+};
+
 const processEvent = function(callback) {
+  applyUserProvidedData();
   const eventName = resolveEventName();
   const eventProps = buildEventProps();
   log(LOG_PREFIX + 'Processing event: ' + eventName);
@@ -909,7 +968,7 @@ const processEvent = function(callback) {
     if (rawPhone && !isSHA256Hash(rawPhone)) {
       normalizedPhone = normalizePhone(rawPhone);
       if (!normalizedPhone) {
-        log(LOG_PREFIX + 'Phone dropped: national format and no default country code set');
+        log(LOG_PREFIX + 'Phone dropped: national format, no country code');
         Object.delete(userData, 'phone');
       }
     }
@@ -999,6 +1058,7 @@ if (!data.attributionIds) {
     // Initialize SDK only
     const consent = getConsentSettings();
     if (processInit(consent)) {
+      applyUserProvidedData();
       setupConsentListeners();
       loadSDK(data.gtmOnSuccess, data.gtmOnFailure);
     } else {
@@ -1329,6 +1389,45 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "trustdata.setUserId"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "trustdata.setUser"
                   },
                   {
                     "type": 8,
@@ -1855,17 +1954,7 @@ scenarios:
 
     assertThat(hashed).isEqualTo(['+442079460958']);
     assertThat(pushed[1][2].user_data).isEqualTo({ phone: 'hash' });
-- name: '[Hashing] A national phone is hashed in E164 format with the default country code'
-  code: |-
-    runCode(merge(mockData, {
-      eventName: 'generate_lead',
-      phoneCountryCode: '+33',
-      eventParametersObject: { user_data: { phone: '06 01 02 03 04' } }
-    }));
-
-    assertThat(hashed).isEqualTo(['+33601020304']);
-    assertThat(pushed[1][2].user_data).isEqualTo({ phone: 'hash' });
-- name: '[Hashing] A national phone without a default country code is dropped, the rest is kept'
+- name: '[Hashing] A national phone is dropped, the rest is kept'
   code: |-
     runCode(merge(mockData, { eventName: 'generate_lead', eventParametersObject: { user_data: { phone: '06 01 02 03 04', first_name: 'Jane' } } }));
 
@@ -1887,8 +1976,7 @@ scenarios:
 
     runCode(merge(mockData, {
       eventName: 'generate_lead',
-      phoneCountryCode: '33',
-      eventParametersObject: { user_data: { email: EMAIL, phone: '0601020304' } }
+      eventParametersObject: { user_data: { email: EMAIL, phone: '+33601020304' } }
     }));
     assertThat(answers.length).isEqualTo(2);
 
@@ -1909,7 +1997,6 @@ scenarios:
     mock('sha256', function(input, onSuccess, onFailure) { onFailure(); });
     runCode(merge(mockData, {
       eventName: 'generate_lead',
-      phoneCountryCode: '33',
       eventParametersObject: { user_data: { email: EMAIL, phone: '+33 6 01 02 03 04' } }
     }));
 
@@ -1920,6 +2007,105 @@ scenarios:
         fail('Personal data logged: ' + message);
       }
     });
+- name: '[User-provided data] A Google variable becomes setUser before the event, cleaned and normalized'
+  code: |-
+    runCode(merge(mockData, {
+      userProvidedData: {
+        _tag_mode: 'MANUAL',
+        email: ' Jane@Example.com ',
+        phone_number: '+33 6 01 02 03 04',
+        address: { first_name: 'Jane', last_name: 'Doe', street: '1 rue X', city: 'Paris', region: '', postal_code: '75001', country: 'FR', _tag_metadata: {} }
+      }
+    }));
+
+    const setUser = pushed.filter(function(cmd) { return cmd[0] === 'setUser'; });
+    assertThat(setUser.length).isEqualTo(1);
+    assertThat(setUser[0][1]).isEqualTo({
+      email: 'jane@example.com',
+      phone: '+33601020304',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      address: { street: '1 rue X', city: 'Paris', postal_code: '75001', country: 'FR' }
+    });
+    assertThat(pushed.indexOf(setUser[0]) < pushed.length - 1, 'setUser comes before the event').isTrue();
+    assertThat(pushed[pushed.length - 1][0]).isEqualTo('event');
+    assertApi('sha256').wasNotCalled();
+- name: '[User-provided data] A logged-out variable, or one with a name or address but no email or phone, sets nothing'
+  code: |-
+    runCode(merge(mockData, { userProvidedData: { _tag_mode: 'MANUAL', _tag_metadata: {} } }));
+    runCode(merge(mockData, { userProvidedData: { address: { first_name: 'Jane', city: 'Paris' } } }));
+    runCode(merge(mockData, { userProvidedData: { email: '', phone_number: undefined, address: { first_name: '  ', country: '' } } }));
+    runCode(merge(mockData, { userProvidedData: 'jane@example.com' }));
+
+    assertThat(pushed.filter(function(cmd) { return cmd[0] === 'setUser'; }).length).isEqualTo(0);
+- name: '[User-provided data] On a loaded SDK the tag calls setUser directly, before the event'
+  code: |-
+    page.sdkLoaded = true;
+
+    runCode(merge(mockData, {
+      commandType: 'event',
+      eventName: 'purchase',
+      userProvidedData: { email: 'a@b.com' }
+    }));
+
+    assertThat(windowCalls.map(function(call) { return call[0]; })).isEqualTo(['trustdata.setUser', 'trustdata.event']);
+    assertThat(windowCalls[0][1]).isEqualTo({ email: 'a@b.com' });
+    assertThat(pushed).isEqualTo([]);
+- name: '[Event parameters] A Google user_data object is cleaned and its phone_number is hashed as phone'
+  code: |-
+    runCode(merge(mockData, {
+      eventName: 'generate_lead',
+      eventParametersObject: {
+        user_data: {
+          _tag_mode: 'MANUAL',
+          email: EMAIL,
+          phone_number: '+33 6 01 02 03 04',
+          address: { first_name: 'Jane', city: 'Paris', _tag_metadata: {} }
+        }
+      }
+    }));
+
+    assertThat(hashed.length).isEqualTo(2);
+    assertThat(pushed[1][2].user_data).isEqualTo({
+      email: 'hash',
+      phone: 'hash',
+      address: { first_name: 'Jane', city: 'Paris' }
+    });
+- name: '[User-provided data] A national phone is dropped and the rest is kept'
+  code: |-
+    runCode(merge(mockData, { userProvidedData: { email: 'a@b.com', phone_number: '06 01 02 03 04' } }));
+
+    const setUser = pushed.filter(function(cmd) { return cmd[0] === 'setUser'; });
+    assertThat(setUser[0][1]).isEqualTo({ email: 'a@b.com' });
+- name: '[User-provided data] An Initialize tag applies it without sending an event'
+  code: |-
+    runCode(merge(mockData, { commandType: 'init', userProvidedData: { email: 'a@b.com' } }));
+
+    assertThat(pushed.map(function(cmd) { return cmd[0]; })).isEqualTo(['init', 'setUser']);
+- name: '[User-provided data] The template never logs raw values'
+  code: |-
+    runCode(merge(mockData, {
+      debug: true,
+      userProvidedData: { email: 'Jane@Example.com', phone_number: '+33 6 01 02 03 04', address: { first_name: 'Jane', city: 'Paris' } }
+    }));
+
+    assertThat(logged.length > 0).isTrue();
+    logged.forEach(function(message) {
+      const compact = message.toLowerCase().split(' ').join('');
+      if (compact.indexOf('jane') !== -1 || compact.indexOf('601020304') !== -1 || compact.indexOf('paris') !== -1) {
+        fail('Personal data logged: ' + message);
+      }
+    });
+- name: '[User-provided data] Parameter variables refuse email, phone, name and address keys'
+  code: |-
+    runCode(merge(mockData, {
+      eventName: 'purchase',
+      eventParametersObject: { tier: 'gold', email: 'a@b.com', phone_number: '+33601020304', address: { city: 'Paris' }, first_name: 'Jane', sha256_email_address: 'abc' },
+      defaultEventParametersObject: { site_type: 'com', email: 'a@b.com', address: { city: 'Paris' } }
+    }));
+
+    assertThat(pushed[0][2].defaultProps).isEqualTo({ site_type: 'com' });
+    assertThat(pushed[pushed.length - 1][2]).isEqualTo({ tier: 'gold' });
 - name: '[Consent] Manual values accept granted, true and 1, anything else is denied, and empty sale of data is allowed'
   code: |-
     const manual = { commandType: 'consent', consentModeChoice: 'manual' };
